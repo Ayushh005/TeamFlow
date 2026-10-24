@@ -78,10 +78,14 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   @SubscribeMessage('join_workspace')
   async handleJoinWorkspace(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { workspaceId: string },
+    @MessageBody() data: any,
   ) {
     const user = client.data.user;
-    if (!user || !user.id || !data?.workspaceId) {
+    const workspaceId = typeof data === 'string'
+      ? (data.startsWith('{') ? JSON.parse(data)?.workspaceId : data)
+      : data?.workspaceId;
+
+    if (!user || !user.id || !workspaceId) {
       return { success: false, error: 'Unauthorized or missing workspaceId' };
     }
 
@@ -89,7 +93,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const membership = await this.prisma.membership.findUnique({
       where: {
         workspaceId_userId: {
-          workspaceId: data.workspaceId,
+          workspaceId: workspaceId,
           userId: user.id,
         },
       },
@@ -97,12 +101,12 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     if (!membership) {
       this.logger.warn(
-        `User ${user.email} denied join to unauthorized workspace room: ${data.workspaceId}`,
+        `User ${user.email} denied join to unauthorized workspace room: ${workspaceId}`,
       );
       return { success: false, error: 'Not a member of this workspace' };
     }
 
-    const roomName = `workspace_${data.workspaceId}`;
+    const roomName = `workspace_${workspaceId}`;
     await client.join(roomName);
     this.logger.log(`User ${user.email} joined room: ${roomName}`);
 
@@ -116,10 +120,14 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   @SubscribeMessage('leave_workspace')
   async handleLeaveWorkspace(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { workspaceId: string },
+    @MessageBody() data: any,
   ) {
-    if (data?.workspaceId) {
-      const roomName = `workspace_${data.workspaceId}`;
+    const workspaceId = typeof data === 'string'
+      ? (data.startsWith('{') ? JSON.parse(data)?.workspaceId : data)
+      : data?.workspaceId;
+
+    if (workspaceId) {
+      const roomName = `workspace_${workspaceId}`;
       await client.leave(roomName);
       this.logger.log(`Client ${client.id} left room: ${roomName}`);
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -86,6 +86,11 @@ export const TasksPage: React.FC = () => {
   const [newCommentText, setNewCommentText] = useState('');
   const [commenting, setCommenting] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const selectedTaskIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    selectedTaskIdRef.current = selectedTask?.id || null;
+  }, [selectedTask?.id]);
 
   // New task form
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -169,15 +174,12 @@ export const TasksPage: React.FC = () => {
     };
 
     const handleCommentCreated = (newComment: any) => {
-      setSelectedTask((currentSelected) => {
-        if (currentSelected?.id === newComment.taskId) {
-          setTaskComments((prev) => {
-            if (prev.some((c) => c.id === newComment.id)) return prev;
-            return [...prev, newComment];
-          });
-        }
-        return currentSelected;
-      });
+      if (selectedTaskIdRef.current === newComment.taskId) {
+        setTaskComments((prev) => {
+          if (prev.some((c) => c.id === newComment.id)) return prev;
+          return [...prev, newComment];
+        });
+      }
 
       setTasks((prev) =>
         prev.map((t) =>
@@ -350,15 +352,29 @@ export const TasksPage: React.FC = () => {
     e.preventDefault();
     if (!newCommentText.trim() || !selectedTask || !activeWorkspace?.id) return;
     setCommenting(true);
+    const textToPost = newCommentText.trim();
+    setNewCommentText('');
     try {
-      await api.post(
+      const res = await api.post(
         `/workspaces/${activeWorkspace.id}/tasks/${selectedTask.id}/comments`,
-        { body: newCommentText },
+        { body: textToPost },
       );
-      setNewCommentText('');
-      await fetchTaskDetails(selectedTask.id);
-      await fetchTasks();
+      const createdComment = res.data?.data;
+      if (createdComment) {
+        setTaskComments((prev) => {
+          if (prev.some((c) => c.id === createdComment.id)) return prev;
+          return [...prev, createdComment];
+        });
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === selectedTask.id
+              ? { ...t, _count: { ...t._count, comments: (t._count?.comments || 0) + 1 } }
+              : t,
+          ),
+        );
+      }
     } catch (err: any) {
+      setNewCommentText(textToPost);
       alert(err.response?.data?.message || 'Failed to post comment');
     } finally {
       setCommenting(false);

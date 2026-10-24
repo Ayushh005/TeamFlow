@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { getAccessToken } from '../api/client';
 
 interface SocketContextValue {
   socket: Socket | null;
@@ -28,11 +29,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    const token = localStorage.getItem('token') || '';
-    const socketInstance = io('http://localhost:3000', {
+    const token = getAccessToken() || '';
+    if (!token) return;
+
+    const socketUrl = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '/';
+    const socketInstance = io(socketUrl, {
       auth: { token },
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
     });
 
     socketInstance.on('connect', () => {
@@ -54,7 +58,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, [user?.id]);
 
-  // When active workspace changes, switch rooms
+  // When active workspace changes or reconnects, switch rooms
   useEffect(() => {
     if (!socket || !connected || !activeWorkspace?.id) return;
 

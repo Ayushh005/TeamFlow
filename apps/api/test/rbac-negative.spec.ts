@@ -7,13 +7,14 @@ interface TestAccount {
   role: string;
   token?: string;
   userId?: string;
+  cookie?: string;
 }
 
 const accounts: Record<string, TestAccount> = {
   owner: { email: 'owner@teamflow.dev', role: 'OWNER' },
   admin: { email: 'admin@teamflow.dev', role: 'ADMIN' },
-  member: { email: 'member@teamflow.dev', role: 'MEMBER' },
-  viewer: { email: 'viewer@teamflow.dev', role: 'VIEWER' },
+  member: { email: 'member@teamflow.dev', role: 'MEMBER', token: '', cookie: '' },
+  viewer: { email: 'viewer@teamflow.dev', role: 'VIEWER', token: '', cookie: '' },
 };
 
 let primaryWorkspaceId: string = '';
@@ -35,7 +36,7 @@ function assert(condition: boolean, message: string) {
   }
 }
 
-async function loginUser(email: string): Promise<string> {
+async function loginUser(email: string): Promise<{ token: string; cookie?: string }> {
   const res = await request(BASE_URL)
     .post('/auth/login')
     .send({ email, password: 'Password123!' });
@@ -43,7 +44,9 @@ async function loginUser(email: string): Promise<string> {
   if (res.status !== 200 || !res.body?.data?.accessToken) {
     throw new Error(`Login failed for ${email}: ${res.status} ${JSON.stringify(res.body)}`);
   }
-  return res.body.data.accessToken;
+  const rawCookie = res.headers['set-cookie'];
+  const cookie = Array.isArray(rawCookie) ? rawCookie[0] : rawCookie;
+  return { token: res.body.data.accessToken, cookie };
 }
 
 async function runNegativeAuthorizationSuite() {
@@ -55,7 +58,9 @@ async function runNegativeAuthorizationSuite() {
   // Step 0: Authenticate all 4 role accounts
   console.log('--- Step 0: Authenticating Test Accounts ---');
   for (const [key, account] of Object.entries(accounts)) {
-    account.token = await loginUser(account.email);
+    const authResult = await loginUser(account.email);
+    account.token = authResult.token;
+    account.cookie = authResult.cookie || '';
     console.log(`✓ Authenticated ${account.role} (${account.email})`);
   }
 
@@ -185,16 +190,16 @@ async function runNegativeAuthorizationSuite() {
 
   // TEST 6: Refresh Token Rotation and Family Revocation on Reuse
   console.log('\n--- Test 6: Auth Security - Refresh Token Reuse Family Revocation ---');
-  const loginRes = await request(BASE_URL)
-    .post('/auth/login')
-    .send({ email: 'member@teamflow.dev', password: 'Password123!' });
+  let refreshTokenCookie = accounts.member.cookie;
+  if (!refreshTokenCookie) {
+    const loginRes = await request(BASE_URL)
+      .post('/auth/login')
+      .send({ email: 'member@teamflow.dev', password: 'Password123!' });
+    const rawCookie = loginRes.headers['set-cookie'];
+    refreshTokenCookie = Array.isArray(rawCookie) ? rawCookie[0] : (rawCookie || '');
+  }
 
-  const rawCookie = loginRes.headers['set-cookie'];
-  assert(!!rawCookie, 'HttpOnly refresh token cookie returned on login');
-
-  const refreshTokenCookie = Array.isArray(rawCookie)
-    ? rawCookie.find((c) => c.startsWith('refresh_token=')) || rawCookie[0]
-    : rawCookie;
+  assert(!!refreshTokenCookie, 'HttpOnly refresh token cookie available for rotation test');
 
   // First legitimate rotation
   const rotateRes1 = await request(BASE_URL)
