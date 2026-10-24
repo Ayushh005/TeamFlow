@@ -9,14 +9,15 @@ import {
   Activity,
   ChevronDown,
   Building2,
-  Clock,
-  Sparkles,
   Lock,
+  UserCheck,
 } from 'lucide-react';
+import { TeamMembersModal } from '../components/TeamMembersModal';
 
 export const DashboardPage: React.FC = () => {
   const { user, activeWorkspace, activeRole, logout, switchWorkspace } = useAuth();
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [teamModalOpen, setTeamModalOpen] = useState(false);
 
   const getRoleBadge = (role: string | null) => {
     switch (role) {
@@ -160,6 +161,14 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTeamModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors shadow-sm bg-white"
+              >
+                <Users className="w-3.5 h-3.5 text-slate-500" />
+                <span>Manage Team</span>
+              </button>
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-50 border border-green-200 text-xs font-semibold text-green-700">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                 Live Session Active
@@ -194,14 +203,17 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div
+            onClick={() => setTeamModalOpen(true)}
+            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-slate-300 transition-all group"
+          >
             <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider group-hover:text-blue-600 transition-colors">
                 Team Members
               </p>
               <h3 className="text-2xl font-bold text-slate-900 mt-1">4 Members</h3>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-105 transition-transform">
               <Users className="w-5 h-5" />
             </div>
           </div>
@@ -282,6 +294,15 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Team Members Management Modal */}
+        <TeamMembersModal
+          isOpen={teamModalOpen}
+          onClose={() => setTeamModalOpen(false)}
+          workspaceId={activeWorkspace?.id || ''}
+          workspaceName={activeWorkspace?.name || ''}
+          currentUserRole={activeRole}
+        />
       </main>
     </div>
   );

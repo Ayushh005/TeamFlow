@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
+import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
@@ -23,6 +24,7 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
     PrismaModule,
     AuthModule,
     HealthModule,
+    WorkspacesModule,
   ],
   providers: [
     {
