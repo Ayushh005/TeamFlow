@@ -13,7 +13,22 @@ import {
   Clock,
   Send,
   Filter,
+  Paperclip,
+  Download,
+  Trash2,
+  FileText,
+  Upload,
 } from 'lucide-react';
+
+interface TaskFileItem {
+  id: string;
+  objectKey: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+  uploadedBy: { id: string; displayName: string; avatarUrl?: string };
+}
 
 interface TaskItem {
   id: string;
@@ -62,6 +77,10 @@ export const TasksPage: React.FC = () => {
   // Drawer & Modals state
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [taskComments, setTaskComments] = useState<CommentItem[]>([]);
+  const [taskFiles, setTaskFiles] = useState<TaskFileItem[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const [newCommentText, setNewCommentText] = useState('');
   const [commenting, setCommenting] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -122,14 +141,133 @@ export const TasksPage: React.FC = () => {
     fetchTasks();
   }, [activeWorkspace?.id, selectedProjectId, selectedStatus, selectedPriority, search]);
 
+  const fetchTaskFiles = async (taskId: string) => {
+    if (!activeWorkspace?.id) return;
+    try {
+      const res = await api.get(`/workspaces/${activeWorkspace.id}/tasks/${taskId}/files`);
+      setTaskFiles(res.data.data);
+    } catch {
+      // ignore
+    }
+  };
+
   const fetchTaskDetails = async (taskId: string) => {
     if (!activeWorkspace?.id) return;
     try {
       const res = await api.get(`/workspaces/${activeWorkspace.id}/tasks/${taskId}`);
       setSelectedTask(res.data.data);
       setTaskComments(res.data.data.comments || []);
+      fetchTaskFiles(taskId);
     } catch {
       // ignore
+    }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedTask || !activeWorkspace?.id) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('File exceeds maximum size limit of 10MB');
+      return;
+    }
+
+    setUploadingFile(true);
+    setUploadError(null);
+
+    try {
+      // 1. Request presigned PUT URL
+      const presignRes = await api.post(`/workspaces/${activeWorkspace.id}/files/presign-upload`, {
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+        taskId: selectedTask.id,
+        projectId: selectedTask.projectId,
+      });
+
+      const { uploadUrl, objectKey } = presignRes.data.data;
+
+      // 2. Upload file directly to S3/MinIO or local endpoint
+      const uploadResp = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+      });
+
+      if (!uploadResp.ok) {
+        console.warn('Direct upload status returned:', uploadResp.status);
+      }
+
+      // 3. Confirm upload with API
+      await api.post(`/workspaces/${activeWorkspace.id}/files/confirm`, {
+        objectKey,
+        originalName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+        taskId: selectedTask.id,
+        projectId: selectedTask.projectId,
+      });
+
+      await fetchTaskFiles(selectedTask.id);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Failed to upload attachment';
+      setUploadError(Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setUploadingFile(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleDownloadFile = async (fileId: string) => {
+    if (!activeWorkspace?.id) return;
+    try {
+      const res = await api.get(`/workspaces/${activeWorkspace.id}/files/${fileId}/presign-download`);
+      const { downloadUrl, fileName } = res.data.data;
+
+      if (downloadUrl.includes('/download')) {
+        // Authenticated blob download to avoid any browser tab popup or header issues
+        const fileResponse = await api.get(downloadUrl, { responseType: 'blob' });
+        const blobUrl = window.URL.createObjectURL(new Blob([fileResponse.data]));
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.setAttribute('download', fileName || 'attachment');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+      } else {
+        // Direct S3 presigned download URL
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.setAttribute('download', fileName || 'attachment');
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to download file');
+    }
+  };
+
+  const handleDeleteFile = async (fileId: string) => {
+    if (!activeWorkspace?.id || !selectedTask) return;
+    try {
+      await api.delete(`/workspaces/${activeWorkspace.id}/files/${fileId}`);
+      setDeletingFileId(null);
+      await fetchTaskFiles(selectedTask.id);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to delete file');
     }
   };
 
@@ -511,6 +649,95 @@ export const TasksPage: React.FC = () => {
                     </>
                   ) : (
                     <span className="text-xs text-slate-400">Unassigned</span>
+                  )}
+                </div>
+              </div>
+
+              {/* File Attachments (MinIO S3 Presigned URLs) */}
+              <div className="pt-4 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-semibold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Attachments ({taskFiles.length})</span>
+                  </h4>
+
+                  {canEdit && (
+                    <label className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg cursor-pointer transition-colors">
+                      <Upload className="w-3 h-3 text-slate-500" />
+                      <span>{uploadingFile ? 'Uploading...' : 'Attach File'}</span>
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                        disabled={uploadingFile}
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {uploadError && (
+                  <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{uploadError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {taskFiles.length === 0 ? (
+                    <div className="text-xs text-slate-400 py-2.5 text-center bg-slate-50 border border-slate-100 rounded-lg">
+                      No files attached. Attach documents, specs, or images (max 10MB).
+                    </div>
+                  ) : (
+                    taskFiles.map((f) => (
+                      <div
+                        key={f.id}
+                        className="p-2.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-lg flex items-center justify-between gap-3 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium text-slate-800 truncate" title={f.originalName}>
+                              {f.originalName}
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                              <span>{formatBytes(f.sizeBytes)}</span>
+                              <span>•</span>
+                              <span>{f.uploadedBy?.displayName || 'User'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => handleDownloadFile(f.id)}
+                            title="Download via presigned URL"
+                            className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-white"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          {canEdit && (
+                            deletingFileId === f.id ? (
+                              <button
+                                onClick={() => handleDeleteFile(f.id)}
+                                className="px-2 py-0.5 rounded text-[11px] font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors"
+                              >
+                                Delete?
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => setDeletingFileId(f.id)}
+                                title="Delete attachment"
+                                className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-white"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
