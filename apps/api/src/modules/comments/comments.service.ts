@@ -6,10 +6,14 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCommentDto } from './dto/comment.dto';
 import { WorkspaceRole } from '@prisma/client';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Injectable()
 export class CommentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtimeGateway: RealtimeGateway,
+  ) {}
 
   async createComment(
     workspaceId: string,
@@ -30,8 +34,8 @@ export class CommentsService {
       throw new NotFoundException('Task not found in this workspace');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const comment = await tx.comment.create({
+    const comment = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.comment.create({
         data: {
           workspaceId,
           taskId,
@@ -56,7 +60,7 @@ export class CommentsService {
           actorId: callerId,
           action: 'COMMENT_ADDED',
           targetType: 'Comment',
-          targetId: comment.id,
+          targetId: created.id,
           metadata: {
             taskId,
             taskTitle: task.title,
@@ -64,8 +68,11 @@ export class CommentsService {
         },
       });
 
-      return comment;
+      return created;
     });
+
+    this.realtimeGateway.broadcastCommentCreated(workspaceId, comment);
+    return comment;
   }
 
   async findByTask(workspaceId: string, taskId: string) {

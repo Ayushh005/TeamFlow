@@ -7,10 +7,14 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTaskDto, UpdateTaskDto } from './dto/task.dto';
 import { WorkspaceRole, TaskStatus, TaskPriority } from '@prisma/client';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Injectable()
 export class TasksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtimeGateway: RealtimeGateway,
+  ) {}
 
   /**
    * Create task with workspace validation and assignee membership check
@@ -50,7 +54,7 @@ export class TasksService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const createdTask = await this.prisma.$transaction(async (tx) => {
       const task = await tx.task.create({
         data: {
           workspaceId,
@@ -88,6 +92,9 @@ export class TasksService {
 
       return task;
     });
+
+    this.realtimeGateway.broadcastTaskCreated(workspaceId, createdTask);
+    return createdTask;
   }
 
   /**
@@ -203,7 +210,7 @@ export class TasksService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedTask = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.task.update({
         where: { id: taskId },
         data: {
@@ -258,6 +265,9 @@ export class TasksService {
 
       return updated;
     });
+
+    this.realtimeGateway.broadcastTaskUpdated(workspaceId, updatedTask);
+    return updatedTask;
   }
 
   /**
@@ -281,7 +291,7 @@ export class TasksService {
       throw new NotFoundException('Task not found in this workspace');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.task.delete({ where: { id: taskId } });
 
       await tx.activityLog.create({
@@ -297,5 +307,8 @@ export class TasksService {
 
       return { success: true, message: 'Task deleted successfully' };
     });
+
+    this.realtimeGateway.broadcastTaskDeleted(workspaceId, taskId);
+    return result;
   }
 }

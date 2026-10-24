@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import {
   CheckSquare,
   Plus,
@@ -54,6 +55,7 @@ interface CommentItem {
 
 export const TasksPage: React.FC = () => {
   const { activeWorkspace, activeRole } = useAuth();
+  const { socket } = useSocket();
   const [searchParams] = useSearchParams();
   const initialProjectId = searchParams.get('projectId') || '';
   const initialSearch = searchParams.get('search') || '';
@@ -140,6 +142,64 @@ export const TasksPage: React.FC = () => {
   useEffect(() => {
     fetchTasks();
   }, [activeWorkspace?.id, selectedProjectId, selectedStatus, selectedPriority, search]);
+
+  // Real-time Socket.IO collaboration updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTaskCreated = (newTask: any) => {
+      setTasks((prev) => {
+        if (prev.some((t) => t.id === newTask.id)) return prev;
+        return [newTask, ...prev];
+      });
+    };
+
+    const handleTaskUpdated = (updatedTask: any) => {
+      setTasks((prev) =>
+        prev.map((t) => (t.id === updatedTask.id ? { ...t, ...updatedTask } : t)),
+      );
+      setSelectedTask((prev) =>
+        prev?.id === updatedTask.id ? { ...prev, ...updatedTask } : prev,
+      );
+    };
+
+    const handleTaskDeleted = ({ taskId }: { taskId: string }) => {
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      setSelectedTask((prev) => (prev?.id === taskId ? null : prev));
+    };
+
+    const handleCommentCreated = (newComment: any) => {
+      setSelectedTask((currentSelected) => {
+        if (currentSelected?.id === newComment.taskId) {
+          setTaskComments((prev) => {
+            if (prev.some((c) => c.id === newComment.id)) return prev;
+            return [...prev, newComment];
+          });
+        }
+        return currentSelected;
+      });
+
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === newComment.taskId
+            ? { ...t, _count: { ...t._count, comments: (t._count?.comments || 0) + 1 } }
+            : t,
+        ),
+      );
+    };
+
+    socket.on('task.created', handleTaskCreated);
+    socket.on('task.updated', handleTaskUpdated);
+    socket.on('task.deleted', handleTaskDeleted);
+    socket.on('comment.created', handleCommentCreated);
+
+    return () => {
+      socket.off('task.created', handleTaskCreated);
+      socket.off('task.updated', handleTaskUpdated);
+      socket.off('task.deleted', handleTaskDeleted);
+      socket.off('comment.created', handleCommentCreated);
+    };
+  }, [socket]);
 
   const fetchTaskFiles = async (taskId: string) => {
     if (!activeWorkspace?.id) return;
