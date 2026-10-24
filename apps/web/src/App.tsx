@@ -4,6 +4,10 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { ProjectsPage } from './pages/ProjectsPage';
+import { TasksPage } from './pages/TasksPage';
+import { ActivityPage } from './pages/ActivityPage';
+import { AppLayout } from './components/AppLayout';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -21,7 +25,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <Navigate to="/login" replace />;
   }
 
-  return <>{children}</>;
+  return <AppLayout>{children}</AppLayout>;
 };
 
 const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -64,13 +68,38 @@ export const App: React.FC = () => {
             }
           />
           <Route
-            path="/*"
+            path="/"
             element={
               <ProtectedRoute>
                 <DashboardPage />
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/projects"
+            element={
+              <ProtectedRoute>
+                <ProjectsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tasks"
+            element={
+              <ProtectedRoute>
+                <TasksPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activity"
+            element={
+              <ProtectedRoute>
+                <ActivityPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

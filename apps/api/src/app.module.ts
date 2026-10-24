@@ -6,6 +6,10 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
+import { ProjectsModule } from './modules/projects/projects.module';
+import { TasksModule } from './modules/tasks/tasks.module';
+import { CommentsModule } from './modules/comments/comments.module';
+import { ActivityModule } from './modules/activity/activity.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
@@ -25,6 +29,10 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
     AuthModule,
     HealthModule,
     WorkspacesModule,
+    ProjectsModule,
+    TasksModule,
+    CommentsModule,
+    ActivityModule,
   ],
   providers: [
     {

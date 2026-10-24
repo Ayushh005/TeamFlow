@@ -1,309 +1,341 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Link } from 'react-router-dom';
+import { api } from '../api/client';
 import {
-  Shield,
-  LogOut,
   FolderKanban,
   CheckSquare,
   Users,
   Activity,
-  ChevronDown,
-  Building2,
-  Lock,
-  UserCheck,
+  Plus,
+  UserPlus,
+  ArrowRight,
+  Clock,
+  ShieldCheck,
+  CheckCircle2,
 } from 'lucide-react';
 import { TeamMembersModal } from '../components/TeamMembersModal';
 
 export const DashboardPage: React.FC = () => {
-  const { user, activeWorkspace, activeRole, logout, switchWorkspace } = useAuth();
-  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const { user, activeWorkspace, activeRole } = useAuth();
   const [teamModalOpen, setTeamModalOpen] = useState(false);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const getRoleBadge = (role: string | null) => {
-    switch (role) {
-      case 'OWNER':
-        return (
-          <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
-            Owner
-          </span>
-        );
-      case 'ADMIN':
-        return (
-          <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
-            Admin
-          </span>
-        );
-      case 'MEMBER':
-        return (
-          <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
-            Member
-          </span>
-        );
-      case 'VIEWER':
-        return (
-          <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
-            Viewer
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
+  const canManage = activeRole === 'OWNER' || activeRole === 'ADMIN';
+
+  useEffect(() => {
+    if (!activeWorkspace?.id) return;
+
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [projRes, taskRes, memRes, actRes] = await Promise.all([
+          api.get(`/workspaces/${activeWorkspace.id}/projects`),
+          api.get(`/workspaces/${activeWorkspace.id}/tasks`),
+          api.get(`/workspaces/${activeWorkspace.id}/members`),
+          api.get(`/workspaces/${activeWorkspace.id}/activity?limit=5`),
+        ]);
+        setProjects(projRes.data.data);
+        setTasks(taskRes.data.data);
+        setMembers(memRes.data.data);
+        setRecentActivities(actRes.data.data);
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [activeWorkspace?.id]);
+
+  // Role distribution breakdown
+  const ownersCount = members.filter((m) => m.role === 'OWNER').length;
+  const adminsCount = members.filter((m) => m.role === 'ADMIN').length;
+  const membersCount = members.filter((m) => m.role === 'MEMBER').length;
+  const viewersCount = members.filter((m) => m.role === 'VIEWER').length;
+
+  const completedTasks = tasks.filter((t) => t.status === 'DONE').length;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            {/* Logo and Workspace Selector */}
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm">
-                  <Shield className="w-5 h-5" />
-                </div>
-                <span className="text-lg font-bold tracking-tight text-slate-900">
-                  TeamFlow
-                </span>
-              </div>
+    <div className="space-y-6">
+      {/* Top Header matching reference screenshot */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-2">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">
+            Workspace Dashboard
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Workspace health, projects, members, and activity at a glance.
+          </p>
+        </div>
 
-              {/* Workspace Switcher */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceMenuOpen(!workspaceMenuOpen)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-sm font-medium text-slate-700 transition-colors"
-                >
-                  <Building2 className="w-4 h-4 text-slate-400" />
-                  <span className="max-w-[140px] sm:max-w-[200px] truncate">
-                    {activeWorkspace?.name || 'Select Workspace'}
-                  </span>
-                  <ChevronDown className="w-4 h-4 text-slate-400" />
-                </button>
+        {/* Quick action buttons like Boardupscale screenshot */}
+        <div className="flex flex-wrap items-center gap-2">
+          {canManage && (
+            <Link
+              to="/projects"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Project</span>
+            </Link>
+          )}
 
-                {workspaceMenuOpen && (
-                  <div className="absolute left-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50">
-                    <div className="px-3 py-1.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                      Your Workspaces
-                    </div>
-                    {user?.memberships.map((m) => (
-                      <button
-                        key={m.workspace.id}
-                        onClick={() => {
-                          switchWorkspace(m.workspace.id);
-                          setWorkspaceMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                          activeWorkspace?.id === m.workspace.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-700'
-                        }`}
-                      >
-                        <span className="truncate">{m.workspace.name}</span>
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                          {m.role}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+          {canManage && (
+            <button
+              onClick={() => setTeamModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium shadow-xs transition-colors"
+            >
+              <UserPlus className="w-3.5 h-3.5 text-slate-500" />
+              <span>Invite Member</span>
+            </button>
+          )}
+
+          <Link
+            to="/activity"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium shadow-xs transition-colors"
+          >
+            <Clock className="w-3.5 h-3.5 text-slate-500" />
+            <span>View Audit Logs</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* Top Metrics Row (clean cards matching reference) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              TOTAL PROJECTS
             </div>
-
-            {/* User Profile & Actions */}
-            <div className="flex items-center gap-3">
-              {getRoleBadge(activeRole)}
-
-              <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-200">
-                <img
-                  src={
-                    user?.avatarUrl ||
-                    `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName || 'User')}&background=2563eb&color=fff`
-                  }
-                  alt={user?.displayName}
-                  className="w-8 h-8 rounded-full border border-slate-200 object-cover"
-                />
-                <div className="text-left">
-                  <div className="text-xs font-semibold text-slate-800 leading-tight">
-                    {user?.displayName}
-                  </div>
-                  <div className="text-[11px] text-slate-400 truncate max-w-[120px]">
-                    {user?.email}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={logout}
-                title="Logout"
-                className="p-2 rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{projects.length}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">All active initiatives</div>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+            <FolderKanban className="w-5 h-5" />
           </div>
         </div>
-      </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                Workspace Dashboard
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Welcome back, {user?.displayName}! You are currently authenticated as{' '}
-                <strong className="text-slate-700">{activeRole}</strong> in{' '}
-                <strong className="text-slate-700">{activeWorkspace?.name}</strong>.
-              </p>
+        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              TOTAL TASKS
             </div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{tasks.length}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">{completedTasks} completed</div>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <CheckSquare className="w-5 h-5" />
+          </div>
+        </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTeamModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors shadow-sm bg-white"
-              >
-                <Users className="w-3.5 h-3.5 text-slate-500" />
-                <span>Manage Team</span>
-              </button>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-50 border border-green-200 text-xs font-semibold text-green-700">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                Live Session Active
+        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              TOTAL MEMBERS
+            </div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{members.length}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">Across workspace</div>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+            <Users className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              TENANT ISOLATION
+            </div>
+            <div className="text-sm font-bold text-emerald-700 mt-2 flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              Zero IDOR Active
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[140px]">
+              {activeWorkspace?.name}
+            </div>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
+      {/* 3 Detail Cards matching Screenshot 1 & 2 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Card 1: Member Management Snapshot */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
+              Member Management Snapshot
+            </h3>
+
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between mb-4">
+              <div>
+                <div className="text-[11px] text-slate-500 font-medium">Active Members</div>
+                <div className="text-lg font-bold text-slate-900">{members.length}</div>
+              </div>
+              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                100% active
               </span>
             </div>
-          </div>
-        </div>
 
-        {/* Metric Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Projects
-              </p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-1">2 Active</h3>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <FolderKanban className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Tasks Assigned
-              </p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-1">3 Tasks</h3>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <CheckSquare className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div
-            onClick={() => setTeamModalOpen(true)}
-            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-slate-300 transition-all group"
-          >
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider group-hover:text-blue-600 transition-colors">
-                Team Members
-              </p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-1">4 Members</h3>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Users className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Audit Trail
-              </p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-1">100% Isolated</h3>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Activity className="w-5 h-5" />
-            </div>
-          </div>
-        </div>
-
-        {/* Security & RBAC Status Banner */}
-        <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-blue-100 rounded-2xl p-6 mb-8">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-500/20">
-              <Lock className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <span>Tenant Isolation & RBAC Active</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-600 text-white">
-                  Zero IDOR
-                </span>
-              </h4>
-              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                All requests from this session are securely signed with JWT and HttpOnly rotating refresh cookies.
-                Resource queries are strictly scoped to workspace ID:{' '}
-                <code className="px-1.5 py-0.5 rounded bg-white/80 border border-blue-200 text-blue-800 font-mono text-[11px]">
-                  {activeWorkspace?.id}
-                </code>
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Projects Section */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-            <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-              <FolderKanban className="w-4 h-4 text-slate-500" />
-              <span>Workspace Projects</span>
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-lg border border-slate-200 bg-white hover:border-slate-300 transition-colors">
-              <div className="flex items-center justify-between mb-1.5">
-                <h4 className="text-sm font-semibold text-slate-900">
-                  Mobile App Redesign
-                </h4>
-                <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
-                  Active
-                </span>
+            <div className="space-y-2 text-xs">
+              <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                Role Distribution
               </div>
-              <p className="text-xs text-slate-500">
-                Revamping navigation, offline caching, and real-time sync for iOS & Android.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-lg border border-slate-200 bg-white hover:border-slate-300 transition-colors">
-              <div className="flex items-center justify-between mb-1.5">
-                <h4 className="text-sm font-semibold text-slate-900">
-                  Platform Core & Auth
-                </h4>
-                <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
-                  Active
+              <div className="flex items-center justify-between text-slate-600">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-purple-500" />
+                  Workspace Owners
                 </span>
+                <span className="font-semibold text-slate-900">{ownersCount}</span>
               </div>
-              <p className="text-xs text-slate-500">
-                RBAC authorization guards, tenant isolation, and session rotation.
-              </p>
+              <div className="flex items-center justify-between text-slate-600">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  Workspace Admins
+                </span>
+                <span className="font-semibold text-slate-900">{adminsCount}</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-600">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Members
+                </span>
+                <span className="font-semibold text-slate-900">{membersCount}</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-600">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-slate-400" />
+                  Viewers
+                </span>
+                <span className="font-semibold text-slate-900">{viewersCount}</span>
+              </div>
             </div>
+          </div>
+
+          <div className="pt-4 mt-4 border-t border-slate-100">
+            <button
+              onClick={() => setTeamModalOpen(true)}
+              className="text-xs font-semibold text-emerald-800 hover:text-emerald-900 flex items-center gap-1"
+            >
+              <span>Manage Members →</span>
+            </button>
           </div>
         </div>
 
-        {/* Team Members Management Modal */}
-        <TeamMembersModal
-          isOpen={teamModalOpen}
-          onClose={() => setTeamModalOpen(false)}
-          workspaceId={activeWorkspace?.id || ''}
-          workspaceName={activeWorkspace?.name || ''}
-          currentUserRole={activeRole}
-        />
-      </main>
+        {/* Card 2: Recent Organization Activity */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Recent Activity
+              </h3>
+              <span className="text-[11px] text-slate-400">Live feed</span>
+            </div>
+
+            <div className="space-y-3">
+              {recentActivities.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  No recent activity recorded.
+                </div>
+              ) : (
+                recentActivities.map((act) => (
+                  <div key={act.id} className="flex items-start gap-2.5 text-xs">
+                    <img
+                      src={
+                        act.actor?.avatarUrl ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(act.actor?.displayName || 'User')}&background=2563eb&color=fff`
+                      }
+                      alt=""
+                      className="w-6 h-6 rounded-full shrink-0 object-cover mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-slate-800 truncate">
+                        <strong>{act.actor?.displayName || 'System'}</strong>{' '}
+                        <span className="text-slate-500 text-[11px]">
+                          {act.action.replace(/_/g, ' ').toLowerCase()}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {new Date(act.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="pt-4 mt-4 border-t border-slate-100">
+            <Link
+              to="/activity"
+              className="text-xs font-semibold text-emerald-800 hover:text-emerald-900 flex items-center gap-1"
+            >
+              <span>View All Activity →</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Card 3: Projects Summary */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Projects Overview
+              </h3>
+              <span className="text-[11px] text-slate-400">{projects.length} total</span>
+            </div>
+
+            <div className="space-y-3">
+              {projects.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400">No projects yet.</div>
+              ) : (
+                projects.slice(0, 3).map((p) => (
+                  <div key={p.id} className="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-900 mb-1">
+                      <span className="truncate">{p.name}</span>
+                      <span className="text-[11px] text-slate-500 font-normal">
+                        {p.completedTasks}/{p.totalTasks}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-1 overflow-hidden">
+                      <div
+                        className="bg-emerald-600 h-1 rounded-full"
+                        style={{ width: `${p.progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="pt-4 mt-4 border-t border-slate-100">
+            <Link
+              to="/projects"
+              className="text-xs font-semibold text-emerald-800 hover:text-emerald-900 flex items-center gap-1"
+            >
+              <span>View All Projects →</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Team Members Modal */}
+      <TeamMembersModal
+        isOpen={teamModalOpen}
+        onClose={() => setTeamModalOpen(false)}
+        workspaceId={activeWorkspace?.id || ''}
+        workspaceName={activeWorkspace?.name || ''}
+        currentUserRole={activeRole}
+      />
     </div>
   );
 };
