@@ -11,6 +11,7 @@ import { TasksModule } from './modules/tasks/tasks.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { ActivityModule } from './modules/activity/activity.module';
 import { FilesModule } from './modules/files/files.module';
+import { JobsModule } from './modules/jobs/jobs.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
@@ -34,6 +35,7 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
     TasksModule,
     CommentsModule,
     ActivityModule,
+    JobsModule,
     FilesModule,
   ],
   providers: [

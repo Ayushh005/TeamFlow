@@ -20,6 +20,7 @@ import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PresignUploadDto, ConfirmUploadDto } from './dto/file.dto';
 import { WorkspaceRole } from '@prisma/client';
+import { FileJobsProducer } from '../jobs/producers/file-jobs.producer';
 
 @Injectable()
 export class FilesService {
@@ -33,6 +34,7 @@ export class FilesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly fileJobsProducer: FileJobsProducer,
   ) {
     const endpointHost = this.configService.get<string>('MINIO_ENDPOINT', 'localhost');
     const endpointPort = this.configService.get<string>('MINIO_PORT', '9000');
@@ -172,7 +174,7 @@ export class FilesService {
       throw new ForbiddenException('Cannot register file belonging to another workspace');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const fileObject = await tx.fileObject.create({
         data: {
           workspaceId,
@@ -208,6 +210,19 @@ export class FilesService {
 
       return fileObject;
     });
+
+    // Enqueue background processing job via BullMQ / Worker
+    await this.fileJobsProducer.enqueueFileProcessing({
+      fileId: result.id,
+      workspaceId,
+      objectKey: result.objectKey,
+      originalName: result.originalName,
+      mimeType: result.mimeType,
+      sizeBytes: result.sizeBytes,
+      actorId: callerId,
+    });
+
+    return result;
   }
 
   /**
