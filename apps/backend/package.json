@@ -1,5 +1,5 @@
 {
-  "name": "teamflow-api",
+  "name": "teamflow-backend",
   "version": "1.0.0",
   "description": "TeamFlow NestJS Multi-Tenant Backend API",
   "author": "Ayush Sarraf",

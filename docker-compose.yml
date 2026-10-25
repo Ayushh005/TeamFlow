@@ -90,11 +90,11 @@ services:
   # ==========================================
   # NestJS Backend API Service
   # ==========================================
-  api:
+  backend:
     build:
-      context: ./apps/api
+      context: ./apps/backend
       dockerfile: Dockerfile
-    container_name: teamflow-api
+    container_name: teamflow-backend
     restart: unless-stopped
     depends_on:
       postgres:
@@ -134,14 +134,14 @@ services:
   # ==========================================
   # React + Vite Frontend Web Service
   # ==========================================
-  web:
+  frontend:
     build:
-      context: ./apps/web
+      context: ./apps/frontend
       dockerfile: Dockerfile
-    container_name: teamflow-web
+    container_name: teamflow-frontend
     restart: unless-stopped
     depends_on:
-      - api
+      - backend
     ports:
       - "5173:80"
     networks:
