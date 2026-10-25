@@ -44,6 +44,9 @@ RUN npm ci --omit=dev && npx prisma generate
 # Copy built artifacts from builder stage
 COPY --from=builder /app/dist ./dist
 
+# Create storage directory and ensure appuser owns /app
+RUN mkdir -p /app/storage/uploads && chown -R appuser:appgroup /app
+
 # Switch to non-root user
 USER appuser
 

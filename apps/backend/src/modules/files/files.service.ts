@@ -12,6 +12,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   HeadBucketCommand,
+  CreateBucketCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
@@ -73,11 +74,18 @@ export class FilesService {
       this.logger.log(`MinIO storage is connected: bucket '${this.bucketName}' verified`);
       return true;
     } catch {
-      this.isMinioAvailable = false;
-      this.logger.warn(
-        `MinIO container not detected on port 9000. Operating in seamless local disk storage fallback mode at: ${this.localStorageDir}`,
-      );
-      return false;
+      try {
+        await this.s3Client.send(new CreateBucketCommand({ Bucket: this.bucketName }));
+        this.isMinioAvailable = true;
+        this.logger.log(`MinIO storage is connected: bucket '${this.bucketName}' created successfully`);
+        return true;
+      } catch {
+        this.isMinioAvailable = false;
+        this.logger.warn(
+          `MinIO container not detected on port 9000. Operating in seamless local disk storage fallback mode at: ${this.localStorageDir}`,
+        );
+        return false;
+      }
     }
   }
 

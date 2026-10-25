@@ -47,8 +47,9 @@ services:
   # MinIO Object Storage (S3-Compatible)
   # ==========================================
   minio:
-    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    image: alpine/minio:latest-release
     container_name: teamflow-minio
+    user: "0:0"
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -60,7 +61,7 @@ services:
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "/usr/bin/wget -q --spider http://localhost:9000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -68,33 +69,13 @@ services:
       - teamflow-network
 
   # ==========================================
-  # MinIO Bucket Auto-Provisioner
-  # Automatically creates bucket on first launch
-  # ==========================================
-  minio-init:
-    image: minio/mc:RELEASE.2024-05-09T17-04-24Z
-    container_name: teamflow-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
-      /usr/bin/mc mb --ignore-existing local/${MINIO_BUCKET_NAME:-teamflow-attachments};
-      echo 'MinIO bucket initialized successfully';
-      exit 0;
-      "
-    networks:
-      - teamflow-network
-
-  # ==========================================
   # NestJS Backend API Service
   # ==========================================
-  backend:
+  api:
     build:
       context: ./apps/backend
       dockerfile: Dockerfile
-    container_name: teamflow-backend
+    container_name: teamflow-api
     restart: unless-stopped
     depends_on:
       postgres:
@@ -141,7 +122,7 @@ services:
     container_name: teamflow-frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      - api
     ports:
       - "5173:80"
     networks:
