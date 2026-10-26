@@ -1,8 +1,7 @@
-version: '3.8'
 
 services:
   # ==========================================
-  # PostgreSQL Database Service
+  # PostgreSQL Database 
   # ==========================================
   postgres:
     image: postgres:16-alpine
@@ -25,7 +24,7 @@ services:
       - teamflow-network
 
   # ==========================================
-  # Redis Service (Rate Limiting, Cache, BullMQ)
+  # Redis Service (Rate Limiting, BullMQ)
   # ==========================================
   redis:
     image: redis:7-alpine

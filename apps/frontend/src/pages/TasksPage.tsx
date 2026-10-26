@@ -19,6 +19,8 @@ import {
   Trash2,
   FileText,
   Upload,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 
 interface TaskFileItem {
@@ -56,7 +58,7 @@ interface CommentItem {
 export const TasksPage: React.FC = () => {
   const { activeWorkspace, activeRole } = useAuth();
   const { socket } = useSocket();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialProjectId = searchParams.get('projectId') || '';
   const initialSearch = searchParams.get('search') || '';
 
@@ -68,6 +70,7 @@ export const TasksPage: React.FC = () => {
   const [selectedPriority, setSelectedPriority] = useState<string>('');
   const [search, setSearch] = useState(initialSearch);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'board' | 'table'>('board');
 
   useEffect(() => {
     const urlSearch = searchParams.get('search');
@@ -75,6 +78,23 @@ export const TasksPage: React.FC = () => {
       setSearch(urlSearch);
     }
   }, [searchParams]);
+
+  // Synchronize selectedProjectId with URL search params (supporting ?project=Name or ?projectId=id)
+  useEffect(() => {
+    const projectParam = searchParams.get('project');
+    const projectIdParam = searchParams.get('projectId');
+    if (projectParam) {
+      const decoded = decodeURIComponent(projectParam).toLowerCase();
+      const matched = projects.find((p) => p.name.toLowerCase() === decoded);
+      if (matched) {
+        setSelectedProjectId(matched.id);
+      }
+    } else if (projectIdParam) {
+      setSelectedProjectId(projectIdParam);
+    } else {
+      setSelectedProjectId('');
+    }
+  }, [searchParams, projects]);
 
   // Drawer & Modals state
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
@@ -92,10 +112,25 @@ export const TasksPage: React.FC = () => {
     selectedTaskIdRef.current = selectedTask?.id || null;
   }, [selectedTask?.id]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (selectedTask) {
+          setSelectedTask(null);
+        } else if (createModalOpen) {
+          setCreateModalOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedTask, createModalOpen]);
+
   // New task form
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [newTaskProjectId, setNewTaskProjectId] = useState('');
+  const [newTaskStatus, setNewTaskStatus] = useState<'TODO' | 'IN_PROGRESS' | 'IN_REVIEW' | 'DONE'>('TODO');
   const [newTaskPriority, setNewTaskPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'>('MEDIUM');
   const [newTaskAssigneeId, setNewTaskAssigneeId] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
@@ -392,6 +427,7 @@ export const TasksPage: React.FC = () => {
         title: newTaskTitle,
         description: newTaskDesc,
         projectId: newTaskProjectId,
+        status: newTaskStatus,
         priority: newTaskPriority,
         assigneeId: newTaskAssigneeId || undefined,
         dueAt: newTaskDueDate ? new Date(newTaskDueDate).toISOString() : undefined,
@@ -400,6 +436,7 @@ export const TasksPage: React.FC = () => {
       setNewTaskTitle('');
       setNewTaskDesc('');
       setNewTaskDueDate('');
+      setNewTaskStatus('TODO');
       setCreateModalOpen(false);
       await fetchTasks();
     } catch (err: any) {
@@ -409,6 +446,56 @@ export const TasksPage: React.FC = () => {
       setCreating(false);
     }
   };
+
+  const getProjectKey = (task: TaskItem) => {
+    if (!task.project?.name) return 'TASK';
+    const words = task.project.name.trim().split(/\s+/);
+    if (words.length > 1) {
+      const acr = words.map((w) => w[0]).join('').toUpperCase();
+      return acr.length >= 2 && acr.length <= 4 ? acr : words[0].slice(0, 4).toUpperCase();
+    }
+    return task.project.name.slice(0, 4).toUpperCase();
+  };
+
+  const formatDueDate = (dateString?: string) => {
+    if (!dateString) return null;
+    const d = new Date(dateString);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const getInitials = (name?: string) => {
+    if (!name) return '??';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const COLUMNS = [
+    {
+      id: 'TODO' as const,
+      label: 'To Do',
+      dotColor: 'bg-slate-400',
+      countBg: 'bg-slate-100 text-slate-700 border-slate-200',
+    },
+    {
+      id: 'IN_PROGRESS' as const,
+      label: 'In Progress',
+      dotColor: 'bg-amber-500',
+      countBg: 'bg-amber-50 text-amber-700 border-amber-200',
+    },
+    {
+      id: 'IN_REVIEW' as const,
+      label: 'In Review',
+      dotColor: 'bg-blue-500',
+      countBg: 'bg-blue-50 text-blue-700 border-blue-200',
+    },
+    {
+      id: 'DONE' as const,
+      label: 'Completed',
+      dotColor: 'bg-emerald-500',
+      countBg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    },
+  ];
 
   const getStatusBadge = (status: TaskItem['status'], taskId?: string) => {
     const config = {
@@ -484,7 +571,19 @@ export const TasksPage: React.FC = () => {
           {/* Project Filter */}
           <select
             value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSelectedProjectId(val);
+              const found = projects.find((p) => p.id === val);
+              const next = new URLSearchParams(searchParams);
+              next.delete('projectId');
+              if (found) {
+                next.set('project', found.name);
+              } else {
+                next.delete('project');
+              }
+              setSearchParams(next);
+            }}
             className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-600"
           >
             <option value="">All Projects</option>
@@ -532,12 +631,39 @@ export const TasksPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="text-xs text-slate-500 font-medium px-2">
-          {tasks.length} task{tasks.length === 1 ? '' : 's'}
+        <div className="flex items-center gap-3">
+          {/* View Mode Toggle: Board vs Table */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              onClick={() => setViewMode('board')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${viewMode === 'board'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+                }`}
+              title="Kanban Board View"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Board</span>
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${viewMode === 'table'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+                }`}
+              title="Table List View"
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>Table</span>
+            </button>
+          </div>
+
+          <div className="text-xs text-slate-500 font-medium px-1 hidden sm:block">
+            {tasks.length} task{tasks.length === 1 ? '' : 's'}
+          </div>
         </div>
       </div>
 
-      {/* Clean & Simple Task Table */}
       {loading ? (
         <div className="py-16 text-center text-xs text-slate-400">Loading tasks...</div>
       ) : tasks.length === 0 ? (
@@ -551,7 +677,10 @@ export const TasksPage: React.FC = () => {
           </p>
           {canEdit && (
             <button
-              onClick={() => setCreateModalOpen(true)}
+              onClick={() => {
+                setNewTaskStatus('TODO');
+                setCreateModalOpen(true);
+              }}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -559,7 +688,144 @@ export const TasksPage: React.FC = () => {
             </button>
           )}
         </div>
+      ) : viewMode === 'board' ? (
+        /* ======================================================== */
+        /* KANBAN BOARD VIEW (To Do, In Progress, In Review, Done)  */
+        /* ======================================================== */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+          {COLUMNS.map((col) => {
+            const colTasks = tasks.filter((t) => t.status === col.id);
+            return (
+              <div
+                key={col.id}
+                className="bg-slate-100/70 rounded-2xl p-3 border border-slate-200/80 flex flex-col min-h-[380px]"
+              >
+                {/* Column Header */}
+                <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200/70">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${col.dotColor}`} />
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      {col.label}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-white text-slate-600 border border-slate-200 shadow-2xs">
+                      {colTasks.length}
+                    </span>
+                  </div>
+
+                  {canEdit && (
+                    <button
+                      onClick={() => {
+                        setNewTaskStatus(col.id);
+                        setCreateModalOpen(true);
+                      }}
+                      className="p-1 rounded-lg hover:bg-white text-slate-400 hover:text-slate-800 transition-colors"
+                      title={`Add task to ${col.label}`}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Tasks List */}
+                <div className="space-y-3 flex-1">
+                  {colTasks.length === 0 ? (
+                    <div className="border border-dashed border-slate-300 rounded-xl p-8 text-center text-xs text-slate-400 font-medium bg-white/50">
+                      No tasks in {col.label}
+                    </div>
+                  ) : (
+                    colTasks.map((task) => (
+                      <div
+                        key={task.id}
+                        onClick={() => {
+                          setSelectedTask(task);
+                          fetchTaskDetails(task.id);
+                        }}
+                        className="bg-white rounded-xl border border-slate-200/90 p-4 shadow-2xs hover:shadow-md hover:border-slate-300 transition-all cursor-pointer group flex flex-col justify-between"
+                      >
+                        <div>
+                          {/* Top row: Project Key & Priority */}
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-slate-100 text-slate-700 border border-slate-200">
+                              {getProjectKey(task)}
+                            </span>
+                            {getPriorityBadge(task.priority)}
+                          </div>
+
+                          {/* Title */}
+                          <h4 className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2 leading-snug">
+                            {task.title}
+                          </h4>
+
+                          {/* Description snippet */}
+                          {task.description && (
+                            <p className="text-xs text-slate-500 mt-1.5 line-clamp-2 leading-relaxed">
+                              {task.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Footer row: Comments, Due Date, Assignee */}
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                          <div className="flex items-center gap-3 text-slate-400 text-xs">
+                            <span
+                              className="flex items-center gap-1"
+                              title={`${task._count?.comments || 0} comments`}
+                            >
+                              <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
+                              <span className="text-[11px] font-medium text-slate-600">
+                                {task._count?.comments || 0}
+                              </span>
+                            </span>
+
+                            {task.dueAt && (
+                              <span
+                                className="flex items-center gap-1 text-[11px] font-medium text-slate-600"
+                                title={`Due: ${new Date(task.dueAt).toLocaleDateString()}`}
+                              >
+                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{formatDueDate(task.dueAt)}</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Assignee Avatar */}
+                          <div>
+                            {task.assignee ? (
+                              <div
+                                className="relative group/user"
+                                title={`Assigned to: ${task.assignee.displayName}`}
+                              >
+                                {task.assignee.avatarUrl ? (
+                                  <img
+                                    src={task.assignee.avatarUrl}
+                                    alt={task.assignee.displayName}
+                                    className="w-6 h-6 rounded-full object-cover border border-slate-200 shadow-2xs"
+                                  />
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shadow-2xs">
+                                    {getInitials(task.assignee.displayName)}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic">
+                                Unassigned
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
+        /* ======================================================== */
+        /* TABLE LIST VIEW (Alternative view)                       */
+        /* ======================================================== */
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
           <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
             <thead className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
@@ -640,8 +906,14 @@ export const TasksPage: React.FC = () => {
 
       {/* Slide-over Task Detail Drawer */}
       {selectedTask && (
-        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/30 backdrop-blur-xs flex justify-end">
-          <div className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+        <div
+          onClick={() => setSelectedTask(null)}
+          className="fixed inset-0 z-50 overflow-hidden bg-slate-900/30 backdrop-blur-xs flex justify-end cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 cursor-default"
+          >
             {/* Drawer Header */}
             <div className="p-4 border-b border-slate-200 flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -912,7 +1184,7 @@ export const TasksPage: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                     Project
@@ -921,11 +1193,27 @@ export const TasksPage: React.FC = () => {
                     required
                     value={newTaskProjectId}
                     onChange={(e) => setNewTaskProjectId(e.target.value)}
-                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 focus:outline-none"
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 focus:outline-none"
                   >
                     {projects.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={newTaskStatus}
+                    onChange={(e) => setNewTaskStatus(e.target.value as any)}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 focus:outline-none"
+                  >
+                    <option value="TODO">To Do</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="IN_REVIEW">In Review</option>
+                    <option value="DONE">Completed</option>
                   </select>
                 </div>
 
@@ -936,7 +1224,7 @@ export const TasksPage: React.FC = () => {
                   <select
                     value={newTaskPriority}
                     onChange={(e) => setNewTaskPriority(e.target.value as any)}
-                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 focus:outline-none"
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 focus:outline-none"
                   >
                     <option value="LOW">Low</option>
                     <option value="MEDIUM">Medium</option>

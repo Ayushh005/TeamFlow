@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Activity, Clock, Shield, Search } from 'lucide-react';
+import { Activity, Clock, Search } from 'lucide-react';
 
 interface ActivityItem {
   id: string;
@@ -41,9 +41,34 @@ export const ActivityPage: React.FC = () => {
     fetchActivity();
   }, [activeWorkspace?.id]);
 
-  const formatActionName = (action: string) => {
+  const formatStatus = (status?: string) => {
+    if (!status) return '';
+    switch (status) {
+      case 'TODO':
+        return 'To Do';
+      case 'IN_PROGRESS':
+        return 'In Progress';
+      case 'IN_REVIEW':
+        return 'In Review';
+      case 'DONE':
+        return 'Completed';
+      default:
+        return status;
+    }
+  };
+
+  const formatBytes = (bytes?: number) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
+  const formatActionName = (action: string, metadata?: any) => {
     switch (action) {
       case 'TASK_STATUS_CHANGED':
+        if (metadata?.to === 'DONE') return 'Completed Task';
         return 'Updated Task Status';
       case 'TASK_CREATED':
         return 'Created Task';
@@ -61,17 +86,119 @@ export const ActivityPage: React.FC = () => {
         return 'Removed Member';
       case 'COMMENT_ADDED':
         return 'Posted Comment';
+      case 'FILE_UPLOADED':
+        return 'Uploaded File';
       default:
         return action.replace(/_/g, ' ');
     }
+  };
+
+  const renderSimpleMetadata = (item: ActivityItem) => {
+    const meta = item.metadata || {};
+
+    // 1. Task Status Changed
+    if (item.action === 'TASK_STATUS_CHANGED' || (meta.from && meta.to)) {
+      if (meta.to === 'DONE') {
+        return (
+          <span>
+            Completed task: <strong>{meta.taskTitle || 'Task'}</strong>
+          </span>
+        );
+      }
+      return (
+        <span>
+          Status: <strong>{formatStatus(meta.from)}</strong> → <strong>{formatStatus(meta.to)}</strong> ({meta.taskTitle || 'Task'})
+        </span>
+      );
+    }
+
+    // 2. Task Created
+    if (item.action === 'TASK_CREATED') {
+      return (
+        <span>
+          Task: <strong>{meta.title || 'Untitled'}</strong>
+          {meta.priority ? ` • Priority: ${meta.priority}` : ''}
+          {meta.status ? ` • Initial Status: ${formatStatus(meta.status)}` : ''}
+        </span>
+      );
+    }
+
+    // 3. Comment Added (NO taskId)
+    if (item.action === 'COMMENT_ADDED') {
+      return (
+        <span>
+          Comment on task: <strong>{meta.taskTitle || 'Task'}</strong>
+        </span>
+      );
+    }
+
+    // 4. Task Assigned
+    if (item.action === 'TASK_ASSIGNED') {
+      return (
+        <span>
+          Task assigned: <strong>{meta.taskTitle || 'Task'}</strong>
+        </span>
+      );
+    }
+
+    // 5. Member Invited
+    if (item.action === 'MEMBER_INVITED') {
+      return (
+        <span>
+          Invited <strong>{meta.email}</strong> as <strong>{meta.role}</strong>
+        </span>
+      );
+    }
+
+    // 6. Member Role Updated
+    if (item.action === 'MEMBER_ROLE_UPDATED') {
+      return (
+        <span>
+          Role changed: <strong>{meta.previousRole}</strong> → <strong>{meta.newRole}</strong>
+        </span>
+      );
+    }
+
+    // 7. File Uploaded
+    if (item.action === 'FILE_UPLOADED') {
+      return (
+        <span>
+          File: <strong>{meta.fileName}</strong> {meta.sizeBytes ? `(${formatBytes(meta.sizeBytes)})` : ''}
+        </span>
+      );
+    }
+
+    // 8. Project Created / Updated
+    if (meta.name) {
+      return <span>Project: <strong>{meta.name}</strong></span>;
+    }
+
+    if (meta.title) {
+      return <span>Title: <strong>{meta.title}</strong></span>;
+    }
+
+    if (meta.email) {
+      return <span>Email: <strong>{meta.email}</strong></span>;
+    }
+
+    return null;
   };
 
   const filtered = activities.filter((a) => {
     const term = search.toLowerCase();
     const actorName = a.actor?.displayName?.toLowerCase() || '';
     const actionName = a.action.toLowerCase();
-    const metaStr = JSON.stringify(a.metadata || {}).toLowerCase();
-    return actorName.includes(term) || actionName.includes(term) || metaStr.includes(term);
+    const taskTitle = (a.metadata?.taskTitle || a.metadata?.title || '').toLowerCase();
+    const projectName = (a.metadata?.name || '').toLowerCase();
+    const email = (a.metadata?.email || '').toLowerCase();
+
+    return (
+      actorName.includes(term) ||
+      actionName.includes(term) ||
+      taskTitle.includes(term) ||
+      projectName.includes(term) ||
+      email.includes(term)
+    );
   });
 
   return (
@@ -112,55 +239,47 @@ export const ActivityPage: React.FC = () => {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs divide-y divide-slate-100">
-          {filtered.map((item) => (
-            <div key={item.id} className="p-4 flex items-start gap-3.5 hover:bg-slate-50/50 transition-colors">
-              <img
-                src={
-                  item.actor?.avatarUrl ||
-                  `https://ui-avatars.com/api/?name=${encodeURIComponent(item.actor?.displayName || 'User')}&background=2563eb&color=fff`
-                }
-                alt=""
-                className="w-8 h-8 rounded-full border border-slate-200 object-cover shrink-0 mt-0.5"
-              />
+          {filtered.map((item) => {
+            const detailText = renderSimpleMetadata(item);
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-slate-900">
-                    {item.actor?.displayName || 'System'}
+            return (
+              <div key={item.id} className="p-4 flex items-start gap-3.5 hover:bg-slate-50/50 transition-colors">
+                <img
+                  src={
+                    item.actor?.avatarUrl ||
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(item.actor?.displayName || 'User')}&background=2563eb&color=fff`
+                  }
+                  alt=""
+                  className="w-8 h-8 rounded-full border border-slate-200 object-cover shrink-0 mt-0.5"
+                />
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold text-slate-900">
+                      {item.actor?.displayName || 'System'}
+                    </div>
+                    <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                      <Clock className="w-3 h-3" />
+                      <span>{new Date(item.createdAt).toLocaleString()}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                    <Clock className="w-3 h-3" />
-                    <span>{new Date(item.createdAt).toLocaleString()}</span>
+
+                  <div className="text-xs text-slate-600 mt-0.5">
+                    <span className="font-medium text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 mr-1.5 text-[11px]">
+                      {formatActionName(item.action, item.metadata)}
+                    </span>
+                    <span>on {item.targetType}</span>
                   </div>
+
+                  {detailText && (
+                    <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] text-slate-600">
+                      {detailText}
+                    </div>
+                  )}
                 </div>
-
-                <div className="text-xs text-slate-600 mt-0.5">
-                  <span className="font-medium text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 mr-1.5 text-[11px]">
-                    {formatActionName(item.action)}
-                  </span>
-                  <span>on {item.targetType}</span>
-                </div>
-
-                {item.metadata && (
-                  <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] text-slate-600 font-mono">
-                    {item.metadata.from && item.metadata.to ? (
-                      <span>
-                        Status: <strong>{item.metadata.from}</strong> → <strong>{item.metadata.to}</strong> ({item.metadata.taskTitle})
-                      </span>
-                    ) : item.metadata.name ? (
-                      <span>Name: <strong>{item.metadata.name}</strong></span>
-                    ) : item.metadata.title ? (
-                      <span>Title: <strong>{item.metadata.title}</strong></span>
-                    ) : item.metadata.email ? (
-                      <span>Email: <strong>{item.metadata.email}</strong> (Role: {item.metadata.role})</span>
-                    ) : (
-                      JSON.stringify(item.metadata)
-                    )}
-                  </div>
-                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
