@@ -61,21 +61,26 @@ export class FilesController {
    */
   @Put('files/local-upload')
   @Public() // Can be uploaded with the presigned URL token
-  @ApiOperation({ summary: 'Local file upload fallback for development' })
+  @ApiOperation({ summary: 'Universal file upload endpoint (persists to MinIO & local disk)' })
   async localUpload(
     @Param('workspaceId') workspaceId: string,
     @Query('objectKey') objectKey: string,
     @Req() req: Request,
   ) {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) {
-      chunks.push(chunk);
+    let buffer: Buffer;
+    if (Buffer.isBuffer(req.body)) {
+      buffer = req.body;
+    } else {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      buffer = Buffer.concat(chunks);
     }
-    const buffer = Buffer.concat(chunks);
     await this.filesService.saveLocalFile(workspaceId, objectKey, buffer);
     return {
       success: true,
-      message: 'Local file stored successfully',
+      message: 'File stored successfully',
     };
   }
 

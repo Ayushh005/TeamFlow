@@ -118,42 +118,42 @@ export class FilesService {
 
     await this.checkMinioAvailability();
 
-    if (this.isMinioAvailable) {
-      const command = new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: objectKey,
-        ContentType: dto.mimeType,
-      });
-
-      const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 300 });
-
-      return {
-        uploadUrl,
-        objectKey,
-        storageType: 'MINIO_S3',
-        expiresInSeconds: 300,
-      };
-    }
-
-    // Local development upload endpoint fallback
-    const uploadUrl = `${this.apiBaseUrl}/workspaces/${workspaceId}/files/local-upload?objectKey=${encodeURIComponent(objectKey)}`;
+    // Universal upload endpoint accessible from both Docker and localhost browser
+    const uploadUrl = `/api/v1/workspaces/${workspaceId}/files/local-upload?objectKey=${encodeURIComponent(objectKey)}`;
 
     return {
       uploadUrl,
       objectKey,
-      storageType: 'LOCAL_STORAGE',
+      storageType: this.isMinioAvailable ? 'MINIO_S3' : 'LOCAL_STORAGE',
       expiresInSeconds: 600,
     };
   }
 
   /**
-   * Saves raw binary data to local storage when MinIO container is not running
+   * Saves raw binary data to MinIO (if connected) and local storage
    */
   async saveLocalFile(workspaceId: string, objectKey: string, fileBuffer: Buffer) {
     if (!objectKey.startsWith(`${workspaceId}/`)) {
       throw new ForbiddenException('Invalid object key for workspace');
     }
 
+    // 1. Upload to MinIO S3 bucket if connected
+    if (this.isMinioAvailable) {
+      try {
+        await this.s3Client.send(
+          new PutObjectCommand({
+            Bucket: this.bucketName,
+            Key: objectKey,
+            Body: fileBuffer,
+          }),
+        );
+        this.logger.log(`File uploaded to MinIO: ${objectKey} (${fileBuffer.length} bytes)`);
+      } catch (err: any) {
+        this.logger.error(`MinIO S3 upload error: ${err.message}`);
+      }
+    }
+
+    // 2. Also persist to local storage directory as backup / local caching
     const filePath = path.join(this.localStorageDir, objectKey);
     const fileDir = path.dirname(filePath);
 
@@ -252,26 +252,8 @@ export class FilesService {
 
     await this.checkMinioAvailability();
 
-    if (this.isMinioAvailable) {
-      const command = new GetObjectCommand({
-        Bucket: this.bucketName,
-        Key: file.objectKey,
-        ResponseContentDisposition: `attachment; filename="${encodeURIComponent(file.originalName)}"`,
-      });
-
-      const downloadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 900 });
-
-      return {
-        downloadUrl,
-        fileName: file.originalName,
-        mimeType: file.mimeType,
-        sizeBytes: file.sizeBytes,
-        expiresInSeconds: 900,
-      };
-    }
-
-    // Direct download endpoint from API
-    const downloadUrl = `${this.apiBaseUrl}/workspaces/${workspaceId}/files/${fileId}/download`;
+    // Universal download endpoint that streams from MinIO or disk
+    const downloadUrl = `/workspaces/${workspaceId}/files/${fileId}/download`;
 
     return {
       downloadUrl,
@@ -283,7 +265,7 @@ export class FilesService {
   }
 
   /**
-   * Returns file path and metadata for direct stream download
+   * Returns file path and metadata for direct stream download (retrieves from MinIO if needed)
    */
   async getLocalFilePath(workspaceId: string, fileId: string) {
     const file = await this.prisma.fileObject.findFirst({
@@ -295,10 +277,49 @@ export class FilesService {
     }
 
     const filePath = path.join(this.localStorageDir, file.objectKey);
+    if (fs.existsSync(filePath)) {
+      return {
+        file,
+        filePath,
+        existsOnDisk: true,
+      };
+    }
+
+    // If file is in MinIO, retrieve and cache to local disk
+    if (this.isMinioAvailable) {
+      try {
+        const obj = await this.s3Client.send(
+          new GetObjectCommand({
+            Bucket: this.bucketName,
+            Key: file.objectKey,
+          }),
+        );
+        if (obj.Body) {
+          const fileDir = path.dirname(filePath);
+          if (!fs.existsSync(fileDir)) {
+            fs.mkdirSync(fileDir, { recursive: true });
+          }
+          const stream = obj.Body as any;
+          const chunks: Buffer[] = [];
+          for await (const chunk of stream) {
+            chunks.push(chunk);
+          }
+          fs.writeFileSync(filePath, Buffer.concat(chunks));
+          return {
+            file,
+            filePath,
+            existsOnDisk: true,
+          };
+        }
+      } catch (err: any) {
+        this.logger.error(`Error reading from MinIO for local download: ${err.message}`);
+      }
+    }
+
     return {
       file,
       filePath,
-      existsOnDisk: fs.existsSync(filePath),
+      existsOnDisk: false,
     };
   }
 

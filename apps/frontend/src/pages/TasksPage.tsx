@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -302,7 +303,7 @@ export const TasksPage: React.FC = () => {
       });
 
       if (!uploadResp.ok) {
-        console.warn('Direct upload status returned:', uploadResp.status);
+        throw new Error(`Upload failed with status code ${uploadResp.status}`);
       }
 
       // 3. Confirm upload with API
@@ -317,7 +318,7 @@ export const TasksPage: React.FC = () => {
 
       await fetchTaskFiles(selectedTask.id);
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Failed to upload attachment';
+      const msg = err.response?.data?.message || err.message || 'Failed to upload attachment';
       setUploadError(Array.isArray(msg) ? msg.join(', ') : msg);
     } finally {
       setUploadingFile(false);
@@ -332,8 +333,11 @@ export const TasksPage: React.FC = () => {
       const { downloadUrl, fileName } = res.data.data;
 
       if (downloadUrl.includes('/download')) {
-        // Authenticated blob download to avoid any browser tab popup or header issues
-        const fileResponse = await api.get(downloadUrl, { responseType: 'blob' });
+        // Strip duplicate /api/v1 prefix if passing to api client which already has baseURL = '/api/v1'
+        const cleanUrl = downloadUrl.startsWith('/api/v1')
+          ? downloadUrl.replace(/^\/api\/v1/, '')
+          : downloadUrl;
+        const fileResponse = await api.get(cleanUrl, { responseType: 'blob' });
         const blobUrl = window.URL.createObjectURL(new Blob([fileResponse.data]));
         const a = document.createElement('a');
         a.href = blobUrl;
@@ -905,27 +909,30 @@ export const TasksPage: React.FC = () => {
       )}
 
       {/* Slide-over Task Detail Drawer */}
-      {selectedTask && (
-        <div
-          onClick={() => setSelectedTask(null)}
-          className="fixed inset-0 z-50 overflow-hidden bg-slate-900/30 backdrop-blur-xs flex justify-end cursor-pointer"
-        >
+      {selectedTask &&
+        createPortal(
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 cursor-default"
+            onClick={() => setSelectedTask(null)}
+            className="fixed inset-0 z-[80] overflow-hidden bg-slate-900/40 backdrop-blur-xs flex justify-end cursor-pointer"
           >
-            {/* Drawer Header */}
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {selectedTask.project.name}
-              </span>
-              <button
-                onClick={() => setSelectedTask(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col cursor-default border-l border-slate-200"
+              style={{ animation: 'slideInRight 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }}
+            >
+              {/* Drawer Header */}
+              <div className="h-14 px-6 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider truncate">
+                  {selectedTask.project.name}
+                </span>
+                <button
+                  onClick={() => setSelectedTask(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  title="Close (Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
             {/* Drawer Body */}
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
@@ -1145,13 +1152,22 @@ export const TasksPage: React.FC = () => {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Create Task Modal */}
-      {createModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 animate-in fade-in zoom-in-95 duration-100">
+      {createModalOpen &&
+        createPortal(
+          <div
+            onClick={() => setCreateModalOpen(false)}
+            className="fixed inset-0 z-[80] overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 cursor-default"
+              style={{ animation: 'modalFadeIn 0.15s ease-out' }}
+            >
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-900">Create New Task</h3>
               <button
@@ -1293,8 +1309,20 @@ export const TasksPage: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
+
+      <style>{`
+        @keyframes slideInRight {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
+        }
+        @keyframes modalFadeIn {
+          from { opacity: 0; transform: scale(0.96); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
     </div>
   );
 };
