@@ -13,6 +13,7 @@ import {
   ArrowRight,
   X,
   AlertCircle,
+  Trash2,
 } from 'lucide-react';
 
 interface ProjectItem {
@@ -39,6 +40,23 @@ export const ProjectsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const canCreate = activeRole !== 'VIEWER';
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+  const [confirmDeleteProjectId, setConfirmDeleteProjectId] = useState<string | null>(null);
+
+  const handleDeleteProject = async (projectId: string) => {
+    if (!activeWorkspace?.id) return;
+    try {
+      setDeletingProjectId(projectId);
+      await api.delete(`/workspaces/${activeWorkspace.id}/projects/${projectId}`);
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      setConfirmDeleteProjectId(null);
+    } catch (err: any) {
+      console.error('Failed to delete project', err);
+      alert(err.response?.data?.message || 'Failed to archive project');
+    } finally {
+      setDeletingProjectId(null);
+    }
+  };
 
   const fetchProjects = async () => {
     if (!activeWorkspace?.id) return;
@@ -220,9 +238,39 @@ export const ProjectsPage: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-bold text-slate-900 truncate">{p.name}</h3>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
-                    Active
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {canCreate && (
+                      confirmDeleteProjectId === p.id ? (
+                        <div className="flex items-center gap-1 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
+                          <span className="text-[10px] text-red-700 font-medium">Archive?</span>
+                          <button
+                            onClick={() => handleDeleteProject(p.id)}
+                            disabled={deletingProjectId === p.id}
+                            className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-semibold hover:bg-red-700"
+                          >
+                            {deletingProjectId === p.id ? '...' : 'Yes'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteProjectId(null)}
+                            className="text-[10px] text-slate-600 hover:text-slate-900"
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteProjectId(p.id)}
+                          className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          title="Archive project"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )
+                    )}
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
+                      Active
+                    </span>
+                  </div>
                 </div>
                 <p className="text-xs text-slate-500 line-clamp-2 mb-4 leading-relaxed">
                   {p.description || 'No description provided.'}
@@ -283,12 +331,42 @@ export const ProjectsPage: React.FC = () => {
                     {new Date(p.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      to={`/tasks?projectId=${p.id}`}
-                      className="text-emerald-800 hover:underline font-semibold"
-                    >
-                      Tasks →
-                    </Link>
+                    <div className="inline-flex items-center gap-2 justify-end">
+                      {canCreate && (
+                        confirmDeleteProjectId === p.id ? (
+                          <div className="inline-flex items-center gap-1 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
+                            <span className="text-[10px] text-red-700 font-medium">Archive?</span>
+                            <button
+                              onClick={() => handleDeleteProject(p.id)}
+                              disabled={deletingProjectId === p.id}
+                              className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-semibold hover:bg-red-700"
+                            >
+                              {deletingProjectId === p.id ? '...' : 'Yes'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteProjectId(null)}
+                              className="text-[10px] text-slate-600 hover:text-slate-900"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDeleteProjectId(p.id)}
+                            className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Archive project"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )
+                      )}
+                      <Link
+                        to={`/tasks?projectId=${p.id}`}
+                        className="text-emerald-800 hover:underline font-semibold"
+                      >
+                        Tasks →
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

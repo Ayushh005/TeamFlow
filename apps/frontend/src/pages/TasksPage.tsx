@@ -107,7 +107,27 @@ export const TasksPage: React.FC = () => {
   const [newCommentText, setNewCommentText] = useState('');
   const [commenting, setCommenting] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState(false);
+  const [deletingTask, setDeletingTask] = useState(false);
   const selectedTaskIdRef = useRef<string | null>(null);
+
+  const canDeleteTask = activeRole === 'OWNER' || activeRole === 'ADMIN';
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!activeWorkspace?.id) return;
+    try {
+      setDeletingTask(true);
+      await api.delete(`/workspaces/${activeWorkspace.id}/tasks/${taskId}`);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      setSelectedTask(null);
+      setConfirmDeleteTask(false);
+    } catch (err: any) {
+      console.error('Failed to delete task', err);
+      alert(err.response?.data?.message || 'Failed to delete task');
+    } finally {
+      setDeletingTask(false);
+    }
+  };
 
   useEffect(() => {
     selectedTaskIdRef.current = selectedTask?.id || null;
@@ -925,13 +945,46 @@ export const TasksPage: React.FC = () => {
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider truncate">
                   {selectedTask.project.name}
                 </span>
-                <button
-                  onClick={() => setSelectedTask(null)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                  title="Close (Esc)"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {canDeleteTask && (
+                    confirmDeleteTask ? (
+                      <div className="flex items-center gap-1.5 bg-red-50 px-2 py-1 rounded-lg border border-red-200">
+                        <span className="text-[11px] font-medium text-red-700">Delete task?</span>
+                        <button
+                          onClick={() => handleDeleteTask(selectedTask.id)}
+                          disabled={deletingTask}
+                          className="px-2 py-0.5 text-[11px] font-semibold bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                        >
+                          {deletingTask ? '...' : 'Yes'}
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteTask(false)}
+                          className="px-1.5 py-0.5 text-[11px] font-medium text-slate-600 hover:text-slate-900"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteTask(true)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        title="Delete task"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )
+                  )}
+                  <button
+                    onClick={() => {
+                      setSelectedTask(null);
+                      setConfirmDeleteTask(false);
+                    }}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                    title="Close (Esc)"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
             {/* Drawer Body */}
