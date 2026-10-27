@@ -16,6 +16,8 @@ import {
   ActiveWorkspace,
   ActiveWorkspaceContext,
 } from '../../common/decorators/workspace-context.decorator';
+import { RequireRoles } from '../../common/decorators/roles.decorator';
+import { WorkspaceRole } from '@prisma/client';
 
 @ApiTags('Projects')
 @ApiBearerAuth('bearer')
@@ -90,7 +92,10 @@ export class ProjectsController {
   }
 
   @Delete(':projectId')
-  @ApiOperation({ summary: 'Archive a project' })
+  @RequireRoles(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
+  @ApiOperation({ summary: 'Archive/Delete a project (Owner/Admin only)' })
+  @ApiResponse({ status: 200, description: 'Project archived' })
+  @ApiResponse({ status: 403, description: 'Forbidden for non-Admin/non-Owner' })
   async archive(
     @Param('workspaceId') workspaceId: string,
     @Param('projectId') projectId: string,

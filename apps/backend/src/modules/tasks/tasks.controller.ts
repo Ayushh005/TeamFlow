@@ -17,7 +17,8 @@ import {
   ActiveWorkspace,
   ActiveWorkspaceContext,
 } from '../../common/decorators/workspace-context.decorator';
-import { TaskPriority, TaskStatus } from '@prisma/client';
+import { TaskPriority, TaskStatus, WorkspaceRole } from '@prisma/client';
+import { RequireRoles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Tasks')
 @ApiBearerAuth('bearer')
@@ -108,7 +109,10 @@ export class TasksController {
   }
 
   @Delete(':taskId')
+  @RequireRoles(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
   @ApiOperation({ summary: 'Delete a task (Owner/Admin only)' })
+  @ApiResponse({ status: 200, description: 'Task deleted successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden for non-Admin/non-Owner' })
   async remove(
     @Param('workspaceId') workspaceId: string,
     @Param('taskId') taskId: string,

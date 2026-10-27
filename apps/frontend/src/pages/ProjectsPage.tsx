@@ -40,11 +40,12 @@ export const ProjectsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const canCreate = activeRole !== 'VIEWER';
+  const canDeleteProject = activeRole === 'OWNER' || activeRole === 'ADMIN';
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [confirmDeleteProjectId, setConfirmDeleteProjectId] = useState<string | null>(null);
 
   const handleDeleteProject = async (projectId: string) => {
-    if (!activeWorkspace?.id) return;
+    if (!activeWorkspace?.id || !canDeleteProject) return;
     try {
       setDeletingProjectId(projectId);
       await api.delete(`/workspaces/${activeWorkspace.id}/projects/${projectId}`);
@@ -239,7 +240,7 @@ export const ProjectsPage: React.FC = () => {
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-bold text-slate-900 truncate">{p.name}</h3>
                   <div className="flex items-center gap-1.5">
-                    {canCreate && (
+                    {canDeleteProject && (
                       confirmDeleteProjectId === p.id ? (
                         <div className="flex items-center gap-1 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
                           <span className="text-[10px] text-red-700 font-medium">Archive?</span>
@@ -332,7 +333,7 @@ export const ProjectsPage: React.FC = () => {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex items-center gap-2 justify-end">
-                      {canCreate && (
+                      {canDeleteProject && (
                         confirmDeleteProjectId === p.id ? (
                           <div className="inline-flex items-center gap-1 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
                             <span className="text-[10px] text-red-700 font-medium">Archive?</span>

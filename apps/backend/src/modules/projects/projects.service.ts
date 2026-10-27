@@ -179,8 +179,8 @@ export class ProjectsService {
     callerId: string,
     callerRole: WorkspaceRole,
   ) {
-    if (callerRole === WorkspaceRole.VIEWER) {
-      throw new ForbiddenException('Viewers do not have permission to archive projects');
+    if (callerRole !== WorkspaceRole.OWNER && callerRole !== WorkspaceRole.ADMIN) {
+      throw new ForbiddenException('Only Owners and Admins can delete or archive projects');
     }
 
     const existing = await this.prisma.project.findFirst({
